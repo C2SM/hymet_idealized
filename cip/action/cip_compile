@@ -1,0 +1,320 @@
+#!/bin/bash
+
+# verbose mode (for debugging only)
+#set -x
+
+# who am I?
+me=`basename $0 | sed 's/cip_/cip /g'`
+
+# defaults and globals
+dir=`/bin/pwd`
+casename=`basename ${dir}`
+exe=lm_f90
+tmp=/project/s83/${USER}/tmp/
+verb=0
+target=""
+csrc="src"
+
+# usage
+usage () {
+  echo "usage: $me [-c dir] [-e name] [-f] [-h] [-r] [-s dir] [-t name] [-v] [-z dir] dir|file"
+  echo "  dir|file  a directory containing COSMO source and Makefile or a *.tar"
+  echo "            or *.tar.gz of such a directory"
+  echo "options:"
+  echo "  -c dir    specify case directory (default=\"./\")"
+  echo "  -e name   specify name of executable (default=\"${exe}\")"
+  echo "  -f        force recompile"
+  echo "  -h        display this help"
+  echo "  -r        try recycling present executable"
+  echo "  -s dir    look for custom code in dir (default=\"${csrc}\")"
+  echo "  -t name   use name as make target (default=\"${target}\")"
+  echo "  -v        verbose mode (echo compile info)"
+  echo "  -z dir    use dir as temporary directory (default=${tmp})"
+}
+
+# parse options
+verb=0
+forc=0
+recy=0
+while getopts "c:e:fhrs:t:vz:" opt ; do
+  case $opt in
+    c ) dir=$OPTARG;;
+    e ) exe=$OPTARG;;
+    f ) forc=1;;
+    h ) usage; exit 0;;
+    r ) recy=1;;
+    s ) csrc=$OPTARG;;
+    t ) target=$OPTARG;;
+    v ) verb=1;;
+    z ) tmp=$OPTARG;;
+    * ) usage; exit 1;;
+  esac
+done
+
+# check remaining arguments
+shift $(($OPTIND-1))
+if [ $# -ne 1 ] ; then
+  usage
+  exit 1
+fi
+basecode=$1
+if [ ! -d "$basecode" -a ! -f "$basecode" ] ; then
+  echo "$me: ERROR $basecode: No such file or directory"
+  exit 1
+fi
+codename=`basename ${basecode} | sed 's/\.gz$//g' | sed 's/\.tar$//g'`
+
+# check case dir
+if [ ! -d "${dir}" ] ; then
+  echo "$me: ERROR $dir: No such directory"
+  exit 1
+fi
+touch ${dir}/gugus 2>/dev/null
+if [ $? -ne 0 ] ; then
+  echo "$me: ERROR $dir: Directory is not writable"
+  exit 1
+fi
+/bin/rm -f ${dir}/gugus 2>/dev/null
+
+# check tmp dir
+tmp=${tmp}/`basename $0`.$$
+/bin/rm -rf ${tmp} 2>/dev/null
+trap "( /bin/rm -rf ${tmp} 2>/dev/null 1>/dev/null; exit 255; )" EXIT HUP INT QUIT TERM KILL STOP
+mkdir -p ${tmp} 2>/dev/null
+if [ $? -ne 0 ] ; then
+  echo "$me: ERROR $tmp: Cannot create directory"
+  exit 1
+fi
+if [ ! -d "${tmp}" ] ; then
+  echo "$me: ERROR $tmp: No such directory"
+  exit 1
+fi
+touch ${tmp}/gugus 2>/dev/null
+if [ $? -ne 0 ] ; then
+  echo "$me: ERROR $tmp: Directory is not writable"
+  exit 1
+fi
+/bin/rm -f ${tmp}/gugus 2>/dev/null
+
+# try recycling already present executable
+gotexe=0
+if [ $recy -eq 1 -a $forc -eq 0 ] ; then
+  if [ -f ${dir}/${exe} ] ; then
+    gotexe=1
+    if [ $gotexe -eq 1 ] ; then
+      echo "$me: WARNING: will recycle ${exe} and not recompile"
+    fi
+  fi
+fi
+
+# remove preexisting executable
+if [ $gotexe -eq 0 ] ; then
+  /bin/rm -f ${dir}/${exe} ${dir}/make.out ${dir}/code.tar.gz 2>/dev/null
+fi
+
+# check if we have custom code to compile
+perscode=0
+persfil="none"
+if [ $gotexe -eq 0 ] ; then
+  if [ $gotexe -eq 0 -a -d ${dir}/${csrc} ] ; then
+    cd ${dir}/${csrc}
+    persfil=`ls *.f90 *.F90 *.F *.incf 2>/dev/null | tr "\n" " "`
+    if [ ! -z "${persfil}" ] ; then
+      perscode=1
+    fi
+  fi
+  if [ $perscode -eq 1 ] ; then
+    echo "$me: custom code found"
+  else
+    echo "$me: no custom code found"
+  fi
+fi
+
+# try getting just executable if no custom code
+if [ $gotexe -eq 0 -a $perscode -eq 0 -a $forc -eq 0 ] ; then
+  echo "$me: fetching ${exe} and source code from ${basecode}"
+  codedir=${tmp}/${codename}
+  # if directory, then copy
+  if [ -d "${basecode}" -a -f "${basecode}/${exe}" ] ; then
+    cp -p ${basecode}/${exe} ${dir}/ 2>/dev/null
+    mkdir ${codedir} 2>/dev/null
+    cp -rp ${basecode}/src ${codedir}/ 2>/dev/null
+  fi
+  # if file, then expand as tar archive
+  if [ -f "${basecode}" ] ; then
+    case ${basecode} in
+      *.tar.gz ) taropts="--atime-preserve -z";;
+      *.tar ) taropts="--atime-preserve";;
+      *.tar.Z ) taropts="--atime-preserve --Z";;
+    esac
+    if [ "${taropts}" ] ; then
+      cd ${tmp}
+      tar ${taropts} -xvf ${basecode} \*/${exe} \*/src 1>/dev/null 2>/dev/null
+      mv -f */${exe} ${dir}/ 2>/dev/null
+    fi
+  fi
+  # check if we have executable
+  if [ -f ${dir}/${exe} ] ; then
+    if [ -n "`file ${dir}/${exe} 2>/dev/null | grep ELF 2>/dev/null`" -o -n "`file ${dir}/${exe} 2>/dev/null | grep Mach-O 2>/dev/null`" ] ; then
+      gotexe=1
+    fi
+  fi
+  if [ $gotexe -eq 0 ] ; then
+    echo "$me: no precompiled binary found, recompile"
+  fi
+  if [ $gotexe -eq 1 ] ; then
+    # make copy of complete source to dir
+    echo "$me: tarzippping all source code to case directory"
+    if [ ! -d ${codedir} ] ; then
+      echo "$me: ERROR problem tarzipping source code"
+      exit 1
+    fi
+    cd ${codedir}
+    cp -p Makefile src 2>/dev/null
+    mv src code
+    tar --atime-preserve --preserve -zcvf ${tmp}/code.tar.gz code 1>/dev/null
+    if [ $? -ne 0 ] ; then
+      echo "$me: ERROR problem tarzipping source code"
+      exit 1
+    fi
+    /bin/mv ${tmp}/code.tar.gz ${dir}/
+    if [ $? -ne 0 ] ; then
+      echo "$me: ERROR problem moving tarzippped code to ${dir}"
+      exit 1
+    fi
+  fi
+  # cleanup
+  /bin/rm -rf ${tmp}/* 2>/dev/null
+fi
+
+# get a copy of code to tmp directory
+if [ $gotexe -eq 0 ] ; then 
+  echo "$me: copying/extracting local copy of $basecode"
+  # if directory, then copy
+  if [ -d "${basecode}" ] ; then
+    cp -pr ${basecode} ${tmp}/
+    if [ $? -ne 0 ] ; then
+      echo "$me: ERROR cannot copy ${basecode}"
+      exit 1
+    fi
+    codedir=${tmp}/`basename ${basecode}`
+  fi
+  # if file, then expand as tar archive
+  if [ -f "${basecode}" ] ; then
+    case ${basecode} in
+      *.tar.gz ) taropts="--preserve --atime-preserve -z";;
+      *.tar ) taropts="--preserve --atime-preserve";;
+      *.tar.Z ) taropts="--preserve --atime-preserve --Z";;
+    esac
+    if [ ! "${taropts}" ] ; then
+      echo "$me: ERROR ${basecode}: Not a tar file"
+      exit 1
+    fi
+    cd ${tmp}
+    tar ${taropts} -xvf ${basecode} 1>/dev/null 2>/dev/null
+    if [ $? -ne 0 ] ; then
+      echo "$me: ERROR ${basecode}: Could not untar"
+      exit 1
+    fi
+    codedir=${tmp}/`basename ${basecode} | sed 's/\.gz$//g' | sed 's/\.tar$//g'`
+  fi
+  # check if code directory is present
+  if [ ! -d ${codedir} ] ; then
+    echo "$me: ERROR ${basecode}: Problem copying/extracting"
+    exit 1
+  fi
+  # check for Makefile and src directory
+  cd ${codedir}
+  if [ ! -f Makefile -o ! -d src ] ; then
+    echo "$me: ERROR ${basecode}: Does not contain Makefile and src directory"
+    exit 1
+  fi
+fi
+
+# copy custom code
+if [ $gotexe -eq 0 -a $perscode -eq 1 ] ; then
+  echo "$me: copying custom code from ${csrc} ($persfil)"
+  cd ${dir}/${csrc}
+  if [ ! -d ${codedir}/src ] ; then
+    echo "$me: ERROR problem copying custom source files"
+    exit 1
+  fi
+  cp ${persfil} ${codedir}/src 2>/dev/null
+  if [ $? -ne 0 ] ; then
+    echo "$me: ERROR problem copying custom source files"
+    exit 1
+  fi
+fi
+
+# make a new executable
+if [ $gotexe -eq 0 ] ; then
+  echo "$me: recompiling executable ${exe}"
+  if [ ! -d ${codedir} ] ; then
+    echo "$me: ERROR problem recompiling binary"
+    exit 1
+  fi
+  cd ${codedir}
+  # remove pre-existing executable
+  /bin/rm -f ${exe} 2>/dev/null
+  # call make for specified target
+  if [ $verb -eq 0 ] ; then
+    make ${target} TARGET=${exe} 1> ${dir}/make.out 2>&1
+  else
+    make ${target} TARGET=${exe} 2>&1 | tee ${dir}/make.out
+  fi
+  # check for executable and move to case directory
+  if [ -f ${exe} ] ; then
+    mv ${exe} ${dir}/
+    if [ $? -ne 0 ] ; then
+      echo "$me: ERROR problem moving ${exe} to ${dir}"
+      exit 1
+    fi
+  fi
+  # check if ELF
+  if [ -f ${dir}/${exe} ] ; then
+    if [ -n "`file ${dir}/${exe} 2>/dev/null | grep ELF 2>/dev/null`" -o -n "`file ${dir}/${exe} 2>/dev/null | grep Mach-O 2>/dev/null`" ] ; then
+      gotexe=1
+    fi
+  fi
+  if [ $gotexe -eq 1 ] ; then
+    # make copy of complete source to dir
+    echo "$me: tarzippping all source code to case directory"
+    if [ ! -d ${codedir} ] ; then
+      echo "$me: ERROR problem tarzipping source code"
+      exit 1
+    fi
+    cd ${codedir}
+    cp -p Makefile src 2>/dev/null
+    mv src code
+    tar --atime-preserve --preserve -zcvf ${tmp}/code.tar.gz code 1>/dev/null
+    if [ $? -ne 0 ] ; then
+      echo "$me: ERROR problem tarzipping source code"
+      exit 1
+    fi
+    /bin/mv ${tmp}/code.tar.gz ${dir}/
+    if [ $? -ne 0 ] ; then
+      echo "$me: ERROR problem moving tarzippped code to ${dir}"
+      exit 1
+    fi
+  fi
+fi
+
+# cleanup
+/bin/rm -rf ${tmp} 2>/dev/null
+trap EXIT HUP INT QUIT TERM KILL STOP
+
+# final check
+if [ $gotexe -eq 0 -o ! -f ${dir}/${exe} ] ; then
+  echo "$me: ERROR problem copying/compiling executable ${exe}"
+  if [ $verb -eq 0 -a $perscode -eq 1 ] ; then
+    echo "$me: ERROR see make.out for details"
+  fi
+  exit 1
+fi
+chmod u+x ${dir}/${exe}
+
+# that's all folks!
+echo "$me: finished sucessfully"
+exit 0
+
+# aloha, earthling

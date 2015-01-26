@@ -1,0 +1,484 @@
+#########################################################
+#  CIP configuration
+#########################################################
+
+# NOTE: the variable ${casename} is available at the time of
+#       execution of this file and is derived from the directory
+#       name in which this file resides.
+
+# define case class
+$gcase_type = "test";                          # type of case
+
+# define actions
+$glocal = 0;                                   # run on local host (not remote $gjob_host)
+$gclean = 1;                                   # clean away after run on number cruncher
+$garchive = 1;                                 # archive case to an archive location
+
+# executable options
+$gcode_vers   = "lm_4.3_ideal";                # in $glocal_code (cip.conf)
+$gcode_exe    = "lm_f90";                      # executable
+$gcode_target = "";                            # target passed to make
+$gcode_custom = "src";                         # custom code directory
+
+# directory and file names
+$gjob_dir     = "${gcase_type}/${casename}";   # in $gjob_base (cip.conf)
+$gjob_outdir  = "./output";                    # model output
+$gjob_inidir  = "./input";                     # model initial data
+$gjob_boudir  = "./input";                     # model boundary data
+$garch_dir    = "${gcase_type}/${casename}";   # in $garch_base (cip.conf)
+
+# naming and queues
+$gjob_queue = "lm";                            # pbs queue on number cruncher
+$gjob_mpi = 1;                                 # launch executable using mpi
+$gjob_nprocx   = 3;                            # number of CPUs along x
+$gjob_nprocy   = 3;                            # number of CPUs along x
+$gjob_nprocio  = 1;                            # number of CPUs for I/O
+$gjob_walltime = "00:20:00";                   # walltime for job
+
+# these files will be additionally copied to the job host
+@gfiles_personal=();
+
+# this script will be run during post-processing, just before
+# archiving the case
+$postproc_hook = "";
+
+# COSMO namelists
+################## INPUT_ORG ##########################
+$input_org = <<EOFORG;
+&LMGRID
+ startlat_tot = -20.0,
+ startlon_tot = -16.75,
+ pollat = 32.5,
+ pollon = -170.0,
+ dlon = 0.00899289281755252,
+ dlat = 0.00899289281755252,
+ ie_tot = 101,
+ je_tot = 101,
+ ke_tot = 40,
+/END
+&RUNCTL
+ dt = 10.0,
+ hstart = 0.,
+ hstop = 0.1,
+ ydate_ini = '2000010100',
+ ltime_mean = .false.,
+ ltime_proc = .true.,
+ lreproduce = .true.,
+ luseobs = .false.,
+ lphys   = .true.,
+ ldiagnos = .true.,
+ ldfi = .false.,
+ l2dim = .false.,
+ lperi = .false.,
+ lcori = .false.,
+ lmetr = .false.,
+ nprocx = ${gjob_nprocx},
+ nprocy = ${gjob_nprocy},
+ nprocio = ${gjob_nprocio},
+ nboundlines = 3,
+/END
+&TUNING
+/END
+EOFORG
+
+################## INPUT_IO ##################
+$input_io = <<EOFIO;
+ &IOCTL
+  lgen = .true.,
+  yform_write = 'grb1',
+ /END
+ &DATABASE
+ /END
+ &GRIBIN
+ /END
+ &GRIBOUT
+  ydir = '${gjob_outdir}',
+  ytunit = 't',
+  ysystem = 'file',
+  ysuffix = '',
+  hcomb = 0, 9999., 1.,
+  yvarml = 'U       ' ,'V       ' ,'W       '  ,'T       '  ,'P       ' ,
+           'PS      ','TKE      ',
+  zlev = 0.,
+  plev = 1000.,
+  yvarpl = '',
+  yvarzl = '',
+  lwrite_const = .true.
+  lcheck = .true.,
+  l_z_filter = .false.,
+  l_p_filter = .false.,
+  luvmasspoint = .false.,
+ /END
+EOFIO
+################## INPUT_DYN ##################
+$input_dyn = <<EOFDYN;
+&DYNCTL
+  lexpl_lbc = .true.,
+  rlwidth = 5000.0,
+  betasw = 0.4,
+  xkd = 0.1,
+  lsemi_imp = .false.,
+  lcond = .true.,
+  lhordiff = .false.,
+    itype_hdiff = 2,
+    hd_corr_u = 0.75,
+    hd_corr_t = 0.75,
+    hd_corr_q = 0.0,
+  l2tls = .true.,
+    irunge_kutta = 2,
+      irk_order = 3,
+      iadv_order = 5,
+    lsl_adv_qx = .false.,
+      yef_adv_qx = 'Bott_2',
+    lva_impl_dyn = .true.,
+      ieva_order = 3,
+  rdheight = 16000.,
+  nrdtau = 10,
+  lspubc = .false.,
+  ldyn_bbc = .true.,
+ /END
+EOFDYN
+################## INPUT_PHY ##########################
+$input_phy = <<EOFPHY;
+ &PHYCTL
+  lgsp = .false.,
+      itype_gscp = 4,
+      lprogprec = .true.,
+      ldiniprec = .true.,
+  lrad = .false.,
+  ltur = .true.,
+      ninctura = 1,
+      lexpcor = .true.,
+      ltmpcor = .false.,
+      lprfcor = .false.,
+      lnonloc = .false.,
+      lcpfluc = .false.,
+      itype_turb = 3,
+      imode_turb = 1,
+      itype_tran = 2,
+      imode_tran = 1,
+    itype_wcld = 2,
+      icldm_rad = 4,
+      icldm_turb = -1,
+      icldm_tran = 0,
+      itype_synd = 2,
+    lsoil = .false.,
+      lmelt = .true.,
+      lmelt_var = .true.,
+      lmulti_layer = .true.,
+      itype_evsl = 2,
+      itype_trvg = 2,
+    lconv = .false.,
+      ltiedtke = .false.,
+      lshallow = .true.,
+      lcape = .false.,
+      lconf_avg = .true.,
+ /END
+EOFPHY
+################## INPUT_ASS ##################
+$input_ass = <<EOFASS;
+ &NUDGING
+  lnudge  =.FALSE.,
+ /END
+EOFASS
+################## INPUT_DIA ##################
+$input_dia = <<EOFDIA;
+ &DIACTL
+  n0meanval = 0,
+  nincmeanval = 1,
+ /END
+EOFDIA
+################## INPUT_INI ##################
+$input_ini = <<EOFINI;
+ &INICTL
+  ndfi =0,
+ /END
+EOFINI
+################## INPUT_SAT ##################
+$input_sat = <<EOFSAT;
+&SATCTL
+   num_sensors=2,
+   sat_input_01='METEOSAT',7,'MVIRI', 2, .TRUE., .TRUE.,.TRUE., .TRUE.,
+   nchan_input_01=1,2
+   sat_input_02='MSG'     ,1,'SEVIRI',8, .TRUE., .TRUE.,.TRUE., .TRUE.,
+   nchan_input_02=1,2,3,4,5,6,7,8
+   lcon_clw=.TRUE.,
+/END
+EOFSAT
+################## INPUT_GEN ##################
+$input_gen = <<EOFGEN;
+!
+!     ############################################################
+!     ###                                                      ###
+!     ###        INPUT FILE FOR ARTIFICIAL INITIAL AND         ###
+!     ###                AND BOUNDARY CONDITIONS               ###
+!     ###                                                      ###
+!     ############################################################
+!
+!  This file contains the input parameters in the NAMELIST format
+!  and is read by the COSMO model at runtime. We are using '!' in
+!  the first column to distinguish comments from data statements.
+!
+!  Author:
+!   Oliver Fuhrer, oliver.fuhrer@meteoswiss.ch
+!
+!  History:
+!
+!  15.04.2008 Oliver Fuhrer
+!    Initial release.
+
+&GENCTL
+
+!-----------------------------------------------------------------
+!
+! VERTICAL COORDINATE  Namelist for the definition of the vertical
+!                      coordinate
+!
+! ivctype   Index denoting type of vertical coordinate
+!        = 1, pressure-based vertical coordinate (default)
+!        = 2, height-base vertical coordinate
+!        = 3, SLEVE vertical coordinate
+! vcflat    Height at which levels are flat (same unit as vcoord)
+! vcoord    Vertical coordinate of COSMO. If ivctype=1 it is given
+!           in dimensionless sigma=p/p0 values, if ivctype=2,3 it
+!           is given in meters. Must supply ke+1 values. If -1 is
+!           specified, default levels are chosen.
+! nfltvc    If ivctype=3, number of filter applications for splitting
+! svc1      If ivctype=3, vertical decay rate of small scales
+! svc2      If ivctype=3, vertical decay rate of large scales
+
+ivctype = 2
+vcflat  = 4500.0,
+vcoordarr=
+        12200.,  12000.,  11800.,  11600.,  11400.,  11200.,  11000.,
+        10800.,  10600.,  10400.,  10200.,  10000.,   9800.,   9600.,
+         9400.,   9200.,   9000.,   8800.,   8600.,   8400.,   8200.,
+         8000.,   7800.,   7600.,   7400.,   7200.,   7000.,   6800.,
+         6600.,   6400.,   6200.,   6000.,   5800.,   5600.,   5400.,
+         5200.,   5000.,   4800.,   4600.,   4400.,   4200.,   4000.,
+         3800.,   3600.,   3400.,   3200.,   3000.,   2800.,   2600.,
+         2400.,   2200.,   2000.,   1805.7,  1617.9,  1437.7,  1266.0,
+         1103.9,   952.2,   811.8,   683.3,   567.1,   463.3,   371.8,
+          292.2,   223.9,   166.0,   117.7,    77.9,    45.7,    20.0,
+            0.0, 
+nfltvc = 100
+svc1   = 10000.0
+svc2   = 3500.0
+
+!-----------------------------------------------------------------
+!
+! TOPOGRAPHY    Namelist for the definition of the idealized
+!               model topography
+!
+! itopotype   Index denoting type of topography
+!           =  0, no terrain, flat ground (default)
+!           =  1, Bell-shaped mountain
+!           =  2, Schaer MWR 2002 mountain (in x-direction)
+!           = 11, Rampanelli JAS 2004 type mountain (T-REX)
+!           = 20, terrain read from external file
+! href        If itopotype=1/2, reference height (m)
+! mntheight   If itopotype=1/2, mountain height (m)
+! mntwidthx   If itopotype=1/2, half-width of mountain in x-dir (m)
+! mntwidthy   If itopotype=1, half-width of mountain in y-dir (m)
+!             If itopotype=2, wavelength of perturbation in x-dir (m)
+! mntctrx     If itopotype=1/2, x-coordinate of mountain center (m)
+! mntctry     If itopotype=1, y-coordinate of mountain center (m)
+! flhwidx     valley floor half width in x-direction (m)
+! slvwidx     slope width on the valley side in x-direction (m)
+! pltwidx     plateau width in x-direction (m)
+! slpwidx     slope width on the plain side in x-direction (m)
+! slpwidy     slope width on the plain side in y-direction (m)
+! pltwidy     plateau width in y-direction (m)
+! yexttopo    If itopotype=20, name of terrain data file
+! iexttopo    If itopotype=20, format of terrain data file.
+!           = 1, Fortran unformatted (default)
+!           = 2, ASCII
+
+itopotype  = 11
+href       = 0.0
+mntheight  = 1500.0
+mntctrx    = 60000.0
+mntctry    = 200000.0
+flhwidx    = 500.0
+slvwidx    = 9000.0
+pltwidx    = 1000.0
+slpwidx    = 9000.0
+slpwidy    = 9000.0
+pltwidy    = 100000.0
+yexttopo   = 'topo.dat'
+iexttopo   = 1
+
+!-----------------------------------------------------------------
+!
+! BASE STATE    Namelist for the definition of the model base
+!               state
+!
+! ibasetype  Index denoting type of model base state
+!          = 0, no model base state T0=0, p0=0, rho0=0
+!          = 1, constant dT/dlnp atmosphere (default)
+! p0sl       Sea level pressure of base state
+! t0sl       Sea level temperature of base state
+! dt0lp      If ibasetype=1, gradient dT/dlnp of base state
+!
+
+ibasetype = 1
+p0sl = 1.0e5
+t0sl = 288.15
+dt0lp = 42.0
+
+!-----------------------------------------------------------------
+!
+! SOIL          Namelist for the definition of the model soil
+!
+! isoiltype  Index denoting type of model base state
+!          = 1, constant soil parameters (default)
+!          = 2, read soil parameters from external grib file
+! z0_c       If isoiltype=1, surface roughness (m)
+! fr_land_c  If isoiltype=1, land fraction (0.0-1.0)
+! soiltyp_c  If isoiltype=1, soil type (class 0.0-9.0)
+! plcov_c    If isoiltype=1, fraction of plant cover (0.0-1.0)
+! lai_c      If isoiltype=1, leaf area index of plants (0.0-...)
+! rootdp_c   If isoiltype=1, depth of the roots (0.0-...)
+! t_soil_c   If isoiltype=1, temperature of soil (K, t_s if <0)
+! t_snow_c   If isoiltype=1, temperature of the snow surface (K, t_s if <0)
+! wf_soil_c  If isoiltype=1, water saturation of soil as fraction of pore volume (0.0-1.0)
+! w_snow_c   If isoiltype=1, water content of snow (m H2O)
+! w_i_c      If isoiltype=1, water content of interception water (m H20)
+! for_e_c    If isoiltype=1, ground fraction covered by evergreen forest (0.0-1.0)
+! for_d_c    If isoiltype=1, ground fraction covered by deciduous forest (0.0-1.0)
+! yextsoil   If isoiltype=2, grib file containing soil parameters
+
+isoiltype = 1
+z0_c      = 0.1
+fr_land_c = 1.0
+soiltyp_c = 4.0
+plcov_c   = 0.1
+lai_c     = 1.5
+rootdp_c  = 0.7
+t_soil_c  = -1.
+t_snow_c  = -1.
+wf_soil_c = 0.2
+w_i_c     = 0.0
+w_snow_c  = 0.0
+for_e_c   = 0.0
+for_d_c   = 0.0
+yextsoil  = 'soil.grb'
+
+!-----------------------------------------------------------------
+!
+! INITIAL STATE  Namelist for the definition of the initial
+!                state of the model atmosphere.
+!
+! ithermptype  Index denoting type of model base state
+!           =  1, 3-layer atmosphere with dT/dz, RH specified (default)
+!           =  2, isentropic atmosphere
+!           =  3, isothermal atmpshere
+!           =  4, constant static stability atmosphere
+!           =  5, analytic thermodynamic sounding (W&K 1982, MWR)
+!                 (t00
+!           =  6, constant static stability atmosphere with tropopause (dry)
+!           = 20, external sounding
+!           = 21, column from external grib file
+! p00         If ithermptype=1/2/3/4/5, surface pressure (Pa, p0sl if <0)
+! t00         If ithermptype=1/2/3/4/5, surface temperature (K, t0sl if <0)
+! zh1         If ithermptype=1, top of first layer (m)
+! zh2         If ithermptype=1, top of second layer (m)
+! zgat1       If ithermptype=1, gradient -dT/dz in first layer (K/m)
+! zgat2       If ithermptype=1, gradient -dT/dz in second layer (K/m)
+! zgat3       If ithermptype=1, gradient -dT/dz in third layer (K/m)
+! zr1         If ithermptype=1, top of first layer (m)
+! zr2         If ithermptype=1, top of second layer (m)
+! zr3         If ithermptype=1, top of third layer (m)
+! zrhb        If ithermptype=1, surface relative humidity (0.0-1.0)
+! zrh1        If ithermptype=1, relative humidity at top of first layer (0.0-1.0)
+! zrh2        If ithermptype=1, relative humidity at top of second layer (0.0-1.0)
+! zrh3        If ithermptype=1, relative humidity at top of third layer (0.0-1.0)
+! nstab       If ithermptype=4, Brun-Vaisala frequency of atmosphere (1/s)
+! wk_pttrop   If ithermptype=5, tropopause potential temperature (K)
+! wk_ttrop    If ithermptype=5, tropopause temperature (K)
+! wk_htrop    If ithermptype=5, tropopause height (m)
+! wk_qvmixed  If ithermptype=5, mixed layer mixing ratio (kg/kg)
+! wk_rhmixed  If ithermptype=5, upper limit of relative humidity (0.0-1.0)
+! wk_mixtop   If ithermptype=5, mixed layer height (m)
+! yextsound   If ithermptype=20, filename of external sounding
+! yextcolumn  If ithermptype=21, filename of grib file
+! icol        If ithermptype=21, i-index of column to extract from file
+! jcol        If ithermptype=21, j-index of column to extract from file
+!
+! iwindptype  Index denoting type of model base state
+!          =  1, constant wind components (default)
+!                (i.e. u(z) = u00, v(z) = v00, w(z) = w00)
+!          =  2, 3-layer atomsphere with du/dz specified
+!          =  3, Schaer MWR 2002 wind profile
+!          =  5, analytic wind sounding (W&K 1982, MWR)
+!                (i.e.  u(z) = u00*tanh(z/zw1), v=0, w=0)
+!                (e.g.  u00=20.0, zw1=3000.0 )
+!          = 20, external sounding (see yextsound above)
+!          = 21, column from external grib file (see yextcolum,icol,jcol above)
+! u00         If iwindptype=1/2, x-component of wind at surface (m/s)
+!             If iwindptype=3/5, wind at z->inf
+! v00         If iwindptype=1/2, y-component of wind at surface (m/s)
+! w00         If iwindptype=1/2, z-component of wind at surface (m/s)
+! zw1         If iwindptype=2/3, top of first layer (m)
+!             If iwindptype=5, scaling height for wind profile
+! zw2         If iwindptype=2/3, top of second layer (m)
+! zgu1        If iwindptype=2, gradient du/dz in first layer (1/s)
+! zgu2        If iwindptype=2, gradient du/dz in second layer (1/s)
+! zgu3        If iwindptype=2, gradient du/dz in third layer (1/s)
+! zgv1        If iwindptype=2, gradient dv/dz in first layer (1/s)
+! zgv2        If iwindptype=2, gradient dv/dz in second layer (1/s)
+! zgv3        If iwindptype=2, gradient dv/dz in third layer (1/s)
+! zgw1        If iwindptype=2, gradient dw/dz in first layer (1/s)
+! zgw2        If iwindptype=2, gradient dw/dz in second layer (1/s)
+! zgw3        If iwindptype=2, gradient dw/dz in third layer (1/s)
+
+ithermptype = 20
+yextsound  = 'sounding.txt'
+yextcolumn = 'column.grb'
+icol       = 1
+jcol       = 1
+
+iwindptype = 20
+u00  =    0.0
+v00  =    0.0
+w00  =    0.0
+zw1  = 3000.0
+zw2  = 5000.0
+zgu1 =    0.0
+zgu2 =    0.0
+zgu3 =    0.0
+zgv1 =    0.0
+zgv2 =    0.0
+zgv3 =    0.0
+zgw1 =    0.0
+zgw2 =    0.0
+zgw3 =    0.0
+
+!-----------------------------------------------------------------
+!
+! PERTURBATION   Namelist for the definition of the perturbations
+!                to be introduced into the atmosphere
+!
+! iperttype  Index denoting type of perturbation
+!         =  0, no perturbation (default)
+!         =  1, temperature bubble disturbance
+! ptpert0    If iperttype=1, magnitude of temperature perturbation (K)
+! ptradx     If iperttype=1, x-radius of perturbation bubble (m)
+! ptrady     If iperttype=1, y-radius of perturbation bubble (m)
+! ptradz     If iperttype=1, z-radius of perturbation bubble (m)
+! ptctrx     If iperttype=1, x-center of perturbation bubble (m)
+! ptctry     If iperttype=1, y-center of perturbation bubble (m)
+! ptctrz     If iperttype=1, z-center of perturbation bubble (m)
+
+iperttype = 0
+ptpert0   =     2.0
+ptradx    =  2000.0
+ptrady    =  2000.0
+ptradz    =  2000.0
+ptctrx    = 33000.0
+ptctry    = 33000.0
+ptctrz    =  2000.0
+
+/END
+EOFGEN
+

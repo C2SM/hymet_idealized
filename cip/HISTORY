@@ -1,0 +1,126 @@
++++++++++++++++++++++++++++++++++++
++  CIP - COSMO idealized package  +
++++++++++++++++++++++++++++++++++++
+
+Date       Author Description
+
+01.12.2008 fuo     Introduction of new flag $glocal which controls wether a job
+                   is run on local host (=1) or wether a job is sent to a remote
+                   number cruncher (=0) names $gjob_host
+24.11.2008 jsc/fuo Improvements for single machine runs and Mac
+                  - Introduced new flags $garchive to switch on/off archiving
+                    and $gclean to switch on/off cleaning away of case on
+                    number cruncher
+                  - Implementation of the possibility to run CIP purely locally
+                    and avoid all rsh, rcp as well as launching to a batch queueing
+                    system of the number crunching task (new global variables $gexecmd,
+                    $gcpcmd, and possiblity to set $gjob_host = local.local)
+                  - option to run exectuable interactively or to submit it to MPI
+                    environment (new variable $gqueue = "PBS")
+                  - Bugfix in cip_compile to actually use specified target. Also
+                    check if executable is valid now also works on MacOSX.
+29.10.2008 fuo    Some changes and adaptations:
+                  - Added option of running a custom post-processing script on
+                    the frontend (for example for generating automatically plots)
+                    before the archival of the case. Introduced new variable
+                    $postproc_hook which can point to a script.
+                  - CIP can now run on any frontend host. This gets rid of the
+                    nasty feature, that you had to login onto a specific node
+                    at CSCS and you could not profit from the load balancer of
+                    the interactive nodes. We got rid of the $glocal_host variable
+                    and the local host is found via `hostname` statements. cip_job
+                    running on the number cruncher gets the frontend host via
+                    a command line argument for copying back the results. Killing
+                    now works faster on the frontend the job was started.
+                  - Added INPUT_GEN namelist for controlling the setup of
+                    idealized cases via src_artifdata.f90
+                  - If no $gjob_queue is specified ($gjob_queue=""), the PBS
+                    command (-q) is skipped, thus allowing for the PBS system
+                    to work for IAC users.
+                  - changed name of job in queue for better distinction of different
+                    jobs running in the queue.
+                  - added echo of time and date before and after job execution to
+                    provide a poor man's wall clock time
+                  Some minor bugfixes:
+                  - bugfix in generation of cip_job.out file
+                  - generation of script name was errorneous ("cip_clean" instead
+                    of "cip clean")
+                  - removal of fort.* files if clean is issued
+                  - bugfix in cip_compile for creation of temporary directory
+
+18.04.2008 fuo    Major overhaul with several large changes:
+                  1) cip is now accessed via only one command (cip)
+                    and different functions are accessed via an
+                    action argument (cip new) similar to the cvs command.
+                    Thus, a new wrapper cip has been written and is in
+                    CIP_BASE/bin. The other scripts have been moved to
+                    CIP_BASE/action.
+                  2) Introduction of the CIP_BASE/cip.conf file which
+                    contains globals related to the users configuration
+                    and are the same for all cases. This has several
+                    advantages. First, we do not need to adapt skel/cip_globals
+                    everytime we make changes to CIP. Second, scripts which
+                    do not directly act on a case directory (e.g. restore) can
+                    access the hosts and the user. cip.conf is also copied to
+                    the number cruncher, so that it's presence does not have to
+                    be assumed on that host.
+                  3) A small README and a HISTORY file have been created in order
+                    to keep track of changes. Also, a directory bkp has been
+                    created in order to make a copy of the state of CIP every
+                    time a change is submitted to cip_work.
+                  cip_globals: several new variables, variables which have a new
+                    meaning and variables which have been removed
+                  cip_clean: now uses cip_globals to find out which files
+                    to remove. bugfix to clean more than one case. now
+                    has proper option handling and help. can remove
+                    also executable and code.tar.gz with -f option.
+                  cip_compile: now accepts specification of make target and
+                    custom source directory other than "src". has been
+                    cleaned up.
+                  cip_diff: now doesn't use "sdiff" but "diff -y" and has an
+                    option to diff everything (-a).
+                  cip_kill: is now a "serial killer", thus can kill more than one
+                    case in one go. checks if specified directory is
+                    really a CIP case and parses cip_globals. now has
+                    some help information (-h) and options handling.
+                  cip_main: now has a verbose option (-v). checks for successfull
+                    termination of the COSMO model run
+                  cip_new: now uses the cip_globals file of the source case to
+                    determined the name of the executable and custom code
+                    directory. also copies personal files. is a "serial
+                    God" and can create several cases in one go.
+                  cip_post: now can postprocess interactively as well as in a
+                    CIP run. interactively can postprocess more than
+                    one case in one go. now copies output before the rest
+                    to catch errors in cip_post.out if anything goes
+                    haywire.
+                  cip_restore: now works and can restore cases from the archive
+                    host. use the -h option to check syntax. cases
+                    are restored into the current directory. it can
+                    restore several cases in one go and uses staging.
+                  cip_start: is now a "serial starter". redirects STDOUT. is less
+                    talkative by default (use -v for more output). has
+                    been cleaned (no more scheduling). considers changes
+                    in cip_globals and cip.conf. copies cip.conf to
+                    number cruncher.
+                  cip_job: now parses a local cip.conf. considers changes in
+                    cip_globals and thus many variables have changed
+                    name.
+
+08.04.2008 led    cip_start: now also copies files specified in @gfiles_personal
+                    to the number cruncher (e.g. YSINGCOL, INPUT_IDEAL)
+                  cip_job: can now read $input_sat for the satellite namelist
+
+07.04.2008 fuo    cip_clean: now removes core files as well.
+                  cip_compile: can now compile more than 1 custom source files.
+                  cip_diff: produces less output if no differences.
+                  cip_job: was cleaned up and typos removed.
+                  cip_start: cleanup and small bugfix.
+
+28.03.2008 led    Introduced CIP_BASE environment variable and according
+                      modifications in scripts.
+
+22.03.2008 fuo    First release of CIP which was merged from several
+           led    old scripts that were originally used on a
+                  NEX-SX/5.
+

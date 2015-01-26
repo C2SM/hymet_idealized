@@ -1,0 +1,134 @@
+#!/usr/bin/perl
+
+# dependencies
+use File::Copy;
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('hls:v',\%opt) || usage();
+usage() if $opt{'h'};
+
+# check which cases to create
+usage() if ($#ARGV == -1);
+@cases = @ARGV;
+
+# save cwd
+chomp($olddir = `pwd`);
+
+# set source directory
+if ($opt{'s'}) {
+  $srcdir = "$opt{'s'}";
+} else {
+  $srcdir = "$ENV{'CIP_BASE'}/skel";
+}
+chdir($srcdir) || die "$0: ERROR source dir $srcdir does not exist";
+chomp($srcdir=`pwd`);
+
+# go back to original dir
+chdir($olddir);
+
+# check if source directory is a CIP case
+die("$0: ERROR no cip_globals in $srcdir") unless (-f "$srcdir/cip_globals");
+
+# get globals
+eval `cat $srcdir/cip_globals` || die("$0: ERROR $srcdir/cip_globals unavailable/corrupt");
+
+# set list of files to be copied in new case directory
+@copyfiles = ("cip_globals");
+push @copyfiles,"input" unless $opt{'l'};
+push @copyfiles, @gfiles_personal;
+
+# if the source dir is another case dir, then copy also fortran code,
+# executable, and personal files
+push(@copyfiles,(
+  "${gcode_custom}",
+  "${gcode_exe}",
+  "code.tar.gz",
+  @gfiles_personal
+)) if ($opt{'s'});
+
+# set list of files to be linked from the skeleton directory
+@linkfiles=();
+
+# create all cases
+foreach $case (@cases) {
+
+  # go back to original directory
+  chdir($olddir);
+
+  # tell user what we are doing
+  print "$0: creating new case $case\n";
+
+  # check if directory already present
+  if (-e "$case") {
+    print "$0: ERROR $case already exists (skipped)\n";
+    next;
+  }
+
+	# create new case directory
+  mkdir($case,0755) || die("$0: ERROR could not create directory $case");
+
+  # go to case directory
+  chdir($case);
+  chomp($case = `pwd`);
+  chdir($user_home);
+  chomp($user_home = `pwd`);
+  chdir($case);
+  chomp($casename = `basename $case`);
+  $casebase = $case;
+  $casebase =~ s|($user_home)/||;
+  chomp($casebase = `dirname $casebase`);
+
+  # copy files from source directory
+  foreach $file (@copyfiles) {
+    if (-e "$srcdir/$file") {
+      print "$0: copying $file\n";
+      $cmd = "cp -rp $srcdir/$file ./"; print "$0: $cmd\n" if ($opt{'v'}); $ret = system($cmd);
+      if ($ret ne 0) { die("$0: ERROR could not copy files"); }
+    }
+  }
+
+  # link to job and post processing directory
+  symlink("$gjob_base/$casebase/$casename", "work") || die("$0: ERROR could not create symlink");
+  symlink("$gpost_base/$casebase/$casename", "post") || die("$0: ERROR could not create symlink");
+
+  #link files from skeleton directory
+  foreach $file (@linkfiles ) {
+    print "$0: linking $file\n";
+    symlink("$skel_dir/$file","./$file") || die("$0: ERROR could not link files");
+  }
+
+}
+
+# goodbye
+exit 0;
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub usage{
+  my $usage=<<EOF;
+usage: $0 [-h] [-l] [-s src] [-v] case [case ...]
+  case   name of new case to create
+options:
+  -h      displays this help page
+  -l      do not copy input directory
+  -s src  duplicate information from case src
+  -v      verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+

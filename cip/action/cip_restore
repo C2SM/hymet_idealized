@@ -1,0 +1,128 @@
+#!/usr/bin/perl
+
+# dependencies
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('fhv',\%opt) || usage();
+usage() if $opt{'h'};
+
+# check which cases to create
+usage() if ($#ARGV == -1);
+@cases = @ARGV;
+
+# check if local directory is writeable
+$cmd="touch .gugus 1>/dev/null 2>/dev/null"; $ret=system($cmd);
+if ($ret eq 0) {
+  $cmd="/bin/rm .gugus 1>/dev/null 2>/dev/null"; system($cmd);
+} else {
+  print "$0: ERROR current directory not writeable\n";
+  exit 1
+}
+
+# save cwd
+chomp($olddir = `pwd`);
+
+# restore all cases
+foreach $case (@cases) {
+
+  # go back to original directory
+  chdir($olddir);
+
+  # generate casename
+  chomp($casename = `basename $case`);
+
+  # check if case directory already exists
+  if (-d "$casename" and ! $opt{'f'}) {
+    print "$0: directory $casename already exists (skipped, use -f to enforce)\n";
+    next;
+  }
+
+  # check if directory exists
+  $cmd = "rsh ${garch_host} \"/bin/ls -d ${garch_base}/${case} |& tail -1\""; print "$0: $cmd\n" if ($opt{'v'}); $ret = `$cmd`;
+  unless ($ret eq "${garch_base}/${case}\n") {
+    print "$0: ERROR ${garch_host}:${garch_base}/${case} does not exist (skipped)\n";
+    next;
+  }
+
+  # check if really a CIP case
+  $cmd = "rsh ${garch_host} \"/bin/ls -1 ${garch_base}/${case}/${casename}.tar.gz |& tail -1\""; print "$0: $cmd\n" if ($opt{'v'}); $ret = `$cmd`;
+  unless ($ret eq "${garch_base}/${case}/${casename}.tar.gz\n") {
+    print "$0: ERROR ${garch_host}:${garch_base}/${case} is not a CIP case (skipped)\n";
+    next;
+  }
+
+  # stage directory
+  print "$0: staging $case\n";
+  $cmd = "rsh ${garch_host} \"/usr/local/bin/stage -rw ${garch_base}/${case}\""; print "$0: $cmd\n" if ($opt{'v'}); $ret = system($cmd . " 2>&1");
+
+  # restore local case directory
+  print "$0: restoring case $casename\n";
+  $cmd = "rcp -p ${garch_host}:${garch_base}/${case}/${casename}.tar.gz ./"; print "$0: $cmd\n" if ($opt{'v'}); $ret = system($cmd . " 2>&1");
+  die("$0: ERROR could not copy ${garch_host}:${garch_base}/${case}/${casename}.tar.gz") if ($ret ne 0);
+  $cmd="tar xvzf ${casename}.tar.gz 1>/dev/null"; print "$0: $cmd\n" if ($opt{'v'}); $ret = system($cmd . " 2>&1");
+  if ($ret ne 0 or ! -d ${casename}) {
+    system("/bin/rm -rf ${casename}.tar.gz ${casename}");
+    die("$0: ERROR problem extracting ${casename}.tar.gz\n");
+  }
+  system("/bin/rm -rf ${casename}.tar.gz");
+
+  # now copy input/output/bc directories
+  chdir($casename);
+  unless (-f "cip_globals") {
+    print "$0: WARNING: cip_globals not present (using defaults)\n";
+    @archive_items = ("output","input");
+  } else {
+    eval `cat cip_globals`;
+    @archive_items = ("${gjob_outdir}","${gjob_inidir}","${gjob_boudir}");
+  }
+  %tmp = map { $_, 1 } @archive_items;
+  @archive_items = keys %tmp;
+  $ret=0;
+  foreach $item (@archive_items) {
+    $item =~ s/\/$//g;
+    $cmd = "rsh ${garch_host} \"/bin/ls -d ${garch_base}/${case}/$item |& tail -1\""; print "$0: $cmd\n" if ($opt{'v'}); $ex = `$cmd`;
+    if ($ex eq "${garch_base}/${case}/$item\n") {
+      $cmd = "rcp -rp ${garch_host}:${garch_base}/${case}/$item ./"; print "$0: $cmd\n" if ($opt{'v'}); $ret += system($cmd . " 2>&1");
+    }
+  }
+
+  # check for errors
+  if ($ret ne 0) {
+    print "$0: WARNING: problem copying data, check case carefully!\n";
+  }
+
+}
+
+# exit with grace
+exit 0;
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub usage{
+  my $usage=<<EOF;
+usage: $0 [-f] [-h] [-v] case [case ...]
+  case   path of case to restore (for example gps/000, thus relative
+         to ${garch_host}:${garch_base})
+options:
+  -f      force restore even if local case directory is present
+  -h      displays this help page
+  -v      verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+

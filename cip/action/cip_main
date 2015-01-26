@@ -1,0 +1,95 @@
+#!/usr/bin/perl
+
+# dependencies
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get my host name
+chomp($local_host=`hostname`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('phv',\%opt) || usage();
+usage() if $opt{'h'};
+
+# check which case to monitor
+if ($#ARGV == -1) {
+  $case = "./";
+} elsif ($#ARGV == 0) {
+  $case = shift(@ARGV);
+} else {
+  die("$0: ERROR must supply none or one argument");
+}
+
+# check if really a case
+die("$0: ERROR $case is not a CIP case") unless (-f "$case/cip_globals");
+  
+# get case name
+chdir($case);
+chomp($case = `pwd`);
+chomp($casename=`basename $case`);
+
+# get globals
+eval `cat cip_globals` || die("$0: ERROR cip_globals unavailable/corrupt");
+
+# write process id of this script in file and transfer it back to the local host
+open(ID,">>.id");print ID "PID: $local_host : $$\n";close(ID);
+
+# cip main waits for this file to arrive in the case directory on the frontend,
+# which arrives not until the job has finished on the number cruncher (Sort of READY-file)
+$filename="cip_job.out";
+while (!-f $filename) {
+  sleep 5
+}
+
+# check if run successfull
+chomp($res = `grep 'END OF TIME STEPPING' ${gcode_exe} 2>/dev/null`);
+
+# start postprocessing of run
+unless ($opt{'p'}) {
+  $cmd="cip post -o cip_post.out -v $case"; system($cmd);
+}
+
+# notify user that we're done
+if ($res ne "") {
+  mailmessage("job finished");
+} else {
+  mailmessage("job FAILED");
+}
+
+# goodbye
+exit 0;
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub mailmessage{
+  my ($message)=@_;
+  $message = "$0: ${casename}: $message";
+  print "\n" . $message . "\n";
+  $cmd = "echo gugus | mailx -s \"$message\" ${gemail}";
+  system("$cmd");
+}
+
+sub usage{
+  my $usage=<<EOF;
+usage: $0 [-c] [-p] [-v]
+options:
+  -p   no postprocessing
+  -h   displays this help page
+  -v   verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+

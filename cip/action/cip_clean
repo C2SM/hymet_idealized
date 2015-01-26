@@ -1,0 +1,97 @@
+#!/usr/bin/perl
+
+# dependencies
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('fhv',\%opt) || usage();
+usage() if $opt{'h'};
+
+# check which cases to clean
+@cases = @ARGV;
+@cases = ('./') if ($#ARGV == -1);
+
+# save cwd
+chomp($olddir = `pwd`);
+
+# clean all cases
+foreach $case (@cases) {
+    
+    # go back to original directory
+    chdir($olddir);
+
+    # check if really a case
+    unless (-f "$case/cip_globals") {
+      print "$0: ERROR $case is not a CIP case (skipped)\n";
+      next;
+    } 
+
+    # go to case directory
+    chdir($case);
+    chomp($case = `pwd`);
+    chomp($casename = `basename $case`);
+
+    # killing old instances of case
+    $cmd="cip kill"; $cmd .= " -v" if ($opt{'v'}); print "$0: $cmd\n" if ($opt{'v'}); system($cmd);
+
+    # cleaning case directory
+    print "$0: cleaning case $casename\n";
+ 
+    # get globals
+    eval `cat cip_globals` || die("$0: ERROR cip_globals unavailable/corrupt");
+
+    # which files to clean
+    @remove_files=(
+      "${gjob_outdir}",
+      "core",
+      "*.out",
+      "fort.*",
+      "INPUT_*",
+      "YU*",
+      "run.job",
+      ".id*",
+      "*~"
+    );
+    @remove_files = (@remove_files,(
+      "${gcode_exe}",
+      "code.tar.gz"
+    )) if ($opt{'f'});
+     
+    # remove files
+    foreach $remove_file (@remove_files) {
+      $cmd="/bin/rm -rf ${remove_file}"; print "$0: $cmd\n" if ($opt{'v'}); system($cmd);
+    }
+    
+}
+
+# goodbye
+exit 0;
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub usage {
+  my $usage=<<EOF;
+usage: $0 [-f] [-h] [-v] [case ...]
+  case   case to clean (current directory if none specified)
+options:
+    -f   full clean (also executable and code archive
+    -h   displays this help page and exits
+    -v   verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+

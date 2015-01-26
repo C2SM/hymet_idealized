@@ -1,0 +1,229 @@
+#!/usr/bin/perl
+
+# dependencies
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get my host name
+chomp($local_host=`hostname`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('fho:pqrv',\%opt) || usage();
+usage() if $opt{'h'};
+
+# check which cases to start
+@cases = @ARGV;
+@cases = ('./') if ($#ARGV == -1);
+
+# redirect output
+if ($opt{'o'}) {
+  $outf = $opt{'o'};
+  open(STDOUT,"> ${outf}");
+}
+
+# save cwd
+chomp($olddir = `pwd`);
+
+# start all cases
+foreach $case (@cases) {
+
+  # go to old directory
+  chdir($olddir);
+
+  # check if really a case
+  unless (-f "$case/cip_globals") {
+    print "$0: ERROR $case is not a CIP case (skipped)\n";
+    next;
+  }
+
+  # go to case directory
+  chdir($case);
+  chomp($case = `pwd`);
+  chdir($user_home);
+  chomp($user_home = `pwd`);
+  chdir($case);
+  chomp($casename = `basename $case`);
+  $casebase = $case;
+  $casebase =~ s|($user_home)/||;
+  chomp($casebase = `dirname $casebase`);
+  $job_dir = "$gjob_base/$casebase/$casename";
+  $post_dir = "$gpost_base/$casebase/$casename";
+
+  # cleaning case directory
+  print "$0: starting case $casename\n";
+
+  # get globals
+  eval `cat cip_globals` || die("$0: ERROR cip_globals unavailable/corrupt");
+
+  # remove cip_job.out, because the presence of this file is the indication, that the data
+  # from the job host has all been transferred back to the local host. (sort of READY file)
+  unlink("cip_job.out");
+
+  # remove files which are to be recomputed 
+  if (not $opt{'f'} and `ls YU* .id* INPUT_* output* 2>/dev/null`) {
+    print "$0: ERROR case $casename is not clean (skipped)\n$0: NOTE force launch with option -f\n";
+    next;
+  }
+  $cmd="cip clean"; $cmd .= " -v" if ($opt{'v'}); print "$0: $cmd\n" if ($opt{'v'}); system($cmd . " 2>&1");
+
+  # compile and link executable with code in case directory
+  if (! $opt{'r'}){
+    print "$0: generating executable\n";
+    @remove_files=(
+      "code.tar.gz",
+      ${gcode_exe}
+    );
+    foreach $remove_file (@remove_files) {
+      $cmd="/bin/rm -rf ${remove_file}"; print "$0: $cmd\n" if ($opt{'v'}); system($cmd . " 2>&1");
+    }
+    $arg = "";
+    $arg .= " -c $case";
+    $arg .= " -e ${gcode_exe}" if ("${gcode_exe}" ne "");
+    $arg .= " -s ${gcode_custom}" if ("${gcode_custom}" ne "");
+    $arg .= " -t ${gcode_target}" if ("${gcode_target}" ne "");
+    $arg .= " -z ${gcode_tmp}" if ("${gcode_tmp}" ne "");
+    $arg .= " -v" if ($opt{"v"});
+    $arg .= " ${glocal_code}/${gcode_vers}";
+    $cmd="cip compile $arg"; print "$0: $cmd\n" if ($opt{'v'}); $ret = system($cmd . " 2>&1");
+    $success = `ls -1 ./${gcode_exe} 2>/dev/null`; chomp($success);
+    die("$0: ERROR generation of executable failed") if ($ret ne 0 || $success eq "");
+  }
+
+  # tell user what we are doing
+  print "$0: create case directory on ${gjob_host}\n";
+  if ($glocal eq 1) {
+    print "$0: main job will be executed on local host \n";
+    $target_path = "$job_dir";
+  } else {
+    $target_path = "${gjob_host}:$job_dir";
+  }
+
+  # create new case directory on job host
+  $cmd="${gexecmd} \"/bin/rm -fr $job_dir; mkdir -p $job_dir\"";
+  print "$0: $cmd\n" if ($opt{'v'});
+  open (CMD,"$cmd|");
+  while (<CMD>){
+    print $_ if ($opt{'v'});
+  }
+
+  # create new case directory on post processing host
+  $cmd="/bin/rm -rf $post_dir; mkdir -p $post_dir"; print "$0: $cmd\n" if ($opt{'v'}); system($cmd . " 2>&1");
+
+  # copy files to case directory on job host
+  # these files are really needed to run job
+  @files_needed=(
+    "$ENV{'CIP_BASE'}/cip.conf",
+    "$ENV{'CIP_BASE'}/skel/cip_job",
+    "cip_globals"
+  );
+  foreach $file (@files_needed){
+    if (-f $file) {
+        $file =~ s/\/$//g;
+        $cmd="${gcpcmd} $file ${target_path} ";
+        print "$0: $cmd\n" if ($opt{'v'});
+        $ret = system($cmd . "2>&1");
+        die "$0: ERROR problem copying $file to ${target_path}\n" if ($ret ne 0)
+    } else {
+      die "$0: ERROR $file is missing"
+    }
+  }
+
+  # these files are copied, if they exist
+  @files_add = (
+    ${gjob_outdir},
+    ${gjob_inidir},
+    ${gjob_boudir},
+    ${gcode_exe}
+  );
+  %tmp = map { $_, 1 } @files_add;
+  @files_add = keys %tmp;
+  foreach $file (@files_add) {
+      $file =~ s/\/$//g;
+      $cmd="${gcpcmd} -rp $file ${target_path} ";
+      print "$0: $cmd\n" if ($opt{'v'});
+      system($cmd . " 2>&1 | grep -v 'No such file or directory'");
+  }
+
+  # add personal (case specific) files (to be defined in cip_globals)
+  if (@gfiles_personal) {
+    foreach $file (@gfiles_personal) {
+      $file =~ s/\/$//g;
+      $cmd="${gcpcmd} -rp $file ${target_path} ";
+      print "$0: $cmd\n" if ($opt{'v'});
+      system($cmd . " 2>&1 | grep -v 'No such file or directory'");
+    }
+  }
+
+  # check if executable is available 
+  $success = `${gexecmd} \"ls -1 $job_dir/${gcode_exe}\" 2>/dev/null`;
+  chomp($success);
+  die("$0: ERROR executable not available on ${gjob_host} in dir $job_dir") if ($success eq "") ;
+
+  # start job in case directory on job host
+  print "$0: starting job on ${gjob_host}\n";
+  $cmd="${gexecmd} \"cd $job_dir; chmod 744 cip_job ${gcode_exe}; ./cip_job ${case} $local_host\"&";
+  print "$0: $cmd\n" if ($opt{'v'});
+  $ret = system("$cmd");
+  if ($ret eq 0) {
+    mailmessage("job launched on ${gjob_host}");
+  } else {
+    print "$0: problem launching job on ${gjob_host}\n";
+  }
+
+  # start cip main, which waits for the termination of the job
+  if ($opt{'p'}) {
+    $cmd="cip main -v -p $case &"; print "$0: $cmd\n" if ($opt{'v'}); system($cmd);
+  } else {
+    $cmd="cip main -v $case &"; print "$0: $cmd\n" if ($opt{'v'}); system($cmd);
+  }
+  print "$0: launched job monitor\n";
+
+}
+
+#################################################################################
+#   END
+#################################################################################
+
+# close output stream
+close(STDOUT);
+
+# exit with grace
+exit 0;
+
+#################################################################################
+#   SUBROUTINES
+#################################################################################
+
+sub usage {
+  my $usage=<<EOF;
+usage: $0 [-c] [-f] [-h] [-o file] [-p] [-v] [case ...]
+  case     case to start (current directory if none specified)
+options:
+  -f       force clean
+  -h       displays this help page
+  -o file  write standard output to file
+  -p       no postprocessing
+  -r       recycle executable already present
+  -v       verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+
+sub mailmessage {
+  my ($message) = @_;
+  $message = "${0}: ${casename}: $message";
+  print $message . "\n";
+  $cmd = "echo gugus | mailx -s \"$message\" ${gemail}"; system("$cmd");
+}
+

@@ -1,0 +1,334 @@
+#!/usr/bin/perl
+
+#########################################################
+#  CIP job
+#########################################################
+
+# This script generates namelists and the job file for an LM job on prometeo.
+# It is executed in the case directory on prometeo.
+# Actions:
+# - remove existing namelist files, output files and run job file in the case dir
+# - create output directory for LM grib files
+# - generate the namelists with variables supplied by the module cip_globals.
+# - generate job file
+# - submit job
+
+# usage: cip_job dir
+#  dir  the case directory on the frontend
+#
+# note: cip_job must be launched in the case directory on the
+#       number cruncher
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get my host name
+chomp($local_host=`hostname`);
+
+# get case directory
+$case = shift(@ARGV);
+chomp($casename = `basename $case`);
+
+# get local host
+chomp($local_host = shift(@ARGV));
+
+# local vaiables
+$output_filename = "cip_job.out";
+
+# open output file
+open(STDOUT,">$output_filename");
+
+# get globals
+eval `cat cip.conf`  || die("$0: ERROR cip.conf unavailable/corrupt");
+eval `cat cip_globals` || die("$0: ERROR cip_globals unavailable/corrupt");
+
+chomp($job_dir = `pwd`);
+print "job_dir: $job_dir \n";
+
+chdir($user_home);
+chomp($user_home = `pwd`);
+chdir($case);
+chomp($casename = `basename $case`);
+$casebase = $case;
+$casebase =~ s|($user_home)/||;
+chomp($casebase = `dirname $casebase`);
+$post_dir = "$gpost_base/$casebase/$casename";
+chdir($job_dir);
+
+if ($glocal eq 1) {
+  # write process id of this script in file and transfer it back to the local host
+  open(ID,">.id_job"); print ID "PID: $local_host : $$\n"; close(ID);
+  if ($case ne "") {
+    $cmd="cp -p .id_job ${case}"; print $cmd,"\n"; system($cmd . " 2>&1");
+  }
+
+} else {
+  # check if script is executed on right machine, else exit
+  #(`hostname` eq "${gjob_host}\n") || die "$0: ERROR must execute on ${gjob_host}!";
+
+  # check if local host is available
+  (`rsh $local_host "echo gugus"` eq "gugus\n") || die("$0: ERROR host $local_host is unreachable");
+
+  # write process id of this script in file and transfer it back to the local host
+  open(ID,">.id_job"); print ID "PID: $local_host : $$\n"; close(ID);
+  if ($case ne "") {
+    $cmd="rcp -p .id_job ${local_host}:${case}"; print $cmd,"\n"; system($cmd . " 2>&1");
+  }
+}
+
+################################################################################
+#  Here we start                                                               #
+################################################################################
+
+# remove existing namelist files, output files and run job file
+$cmd="/bin/rm -rf INPUT_* run.job YU* ${gcode_exe}.out ${gjob_outdir}"; print $cmd,"\n"; system($cmd . " 2>&1");
+
+# create output directory for LM grib files
+mkdir(${gjob_outdir},0755);
+
+################################################################################
+#  Generate the namelists with variables supplied by the module cip_globals.    #
+################################################################################
+print "generating namelists\n";
+open(nml,">INPUT_ORG"); print nml $input_org; close(nml);
+open(nml,">INPUT_IO "); print nml $input_io ; close(nml);
+open(nml,">INPUT_DYN"); print nml $input_dyn; close(nml);
+open(nml,">INPUT_PHY"); print nml $input_phy; close(nml);
+open(nml,">INPUT_ASS"); print nml $input_ass; close(nml);
+open(nml,">INPUT_DIA"); print nml $input_dia; close(nml);
+open(nml,">INPUT_INI"); print nml $input_ini; close(nml);
+if ($input_sat){
+    open(nml,">INPUT_SAT"); print nml $input_sat; close(nml);
+}
+if ($input_ideal){
+    open(nml,">INPUT_IDEAL"); print nml $input_ideal; close(nml);
+}
+if ($input_gen){
+    open(nml,">INPUT_GEN"); print nml $input_gen; close(nml);
+}
+if ($input_clm){
+    open(nml,">lnd.stdin"); print nml $input_clm; close(nml);
+}
+print "done\n";
+
+################################################################################
+#                             Generate jobfile                                 #
+################################################################################
+### Jobfile for SLURM queue
+if (${gsystem} eq "rosa") {
+  print "generating rosa jobfile...\n";
+  $nproctot=${gjob_nprocx}*${gjob_nprocy}+${gjob_nprocio};
+  $nr_cpus = int(${nproctot}/2 + 0.5);
+  $temp = <<EOFJOB1;
+\#!/bin/bash
+\#SBATCH --account=ch4
+\#SBATCH --ntasks=${nproctot}
+\#SBATCH --time=${gjob_walltime}
+\#SBATCH --output=${job_dir}/${gcode_exe}.out
+\#SBATCH --error=${job_dir}/${gcode_exe}.err
+\#SBATCH --job-name=${case}.job
+
+EOFJOB1
+$temp .= <<EOFJOB3;
+
+\# Initialization
+set verbose
+set echo
+export IOBUF_PARAMS="*"
+
+\# Go into case directory
+cd ${job_dir}
+/bin/rm -f YU*
+
+\# Run LM in case directory
+date
+aprun -n ${nproctot} ./${gcode_exe}
+date
+
+\# goodbye
+EOFJOB3
+  open(job,">run.job");
+  print job $temp;
+  close(job);
+  print "done\n";
+
+### Jobfile for execution in shell (no queue) 
+} elsif (${gsystem} eq "none") {
+  print "generating SHELL jobfile\n";
+  $nproctot=${gjob_nprocx}*${gjob_nprocy}+${gjob_nprocio};
+  $nr_cpus = int(${nproctot}/2 + 0.5);
+  $temp = <<EOFJOB1;
+\#/bin/tcsh
+EOFJOB1
+  $temp .= <<EOFJOB2;
+
+\# Initialization
+set verbose
+set echo
+
+\# Go into case directory
+cd ${job_dir}
+/bin/rm -f YU*
+
+\# Run LM in case directory
+date
+EOFJOB2
+  if ($gjob_mpi eq 1) {
+    $temp .= <<EOFJOB3;
+mpirun -np ${nproctot} ${gcode_exe}
+EOFJOB3
+  } else {
+    $temp .= <<EOFJOB3;
+./${gcode_exe}
+EOFJOB3
+  }
+  ### echo "JID: ${local_host} : ${!}\n" >> .id_job
+
+  $temp .= <<EOFJOB4;
+date
+
+\# goodbye
+EOFJOB4
+  open(job,">run.job"); print job $temp; close(job);
+  print "done\n";
+
+} else {
+  die("$0: ERROR queue type ${gsystem} is not supported.")
+} 
+
+################################################################################
+#                             Submit/Run job                                   #
+################################################################################
+
+if ($glocal eq 1) {
+  $target_path = $post_dir;
+  $case_path = $case;
+} else {
+  $target_path = "$gpost_host:$post_dir";
+  $case_path = "$local_host:$case";
+}
+
+if (${gsystem} eq "rosa") {
+  print "submitting job...\n";
+  $returnstring=`sbatch run.job`;
+  print "$returnstring\n";
+
+  # if submission successfull, check id of job
+  if ($? == 0) {
+    #extracts job_id and job_queue from returnstring of the command qsub
+    ($job_id) = ($returnstring =~ /^(.*)\./);
+    # write job id and process id of this script in file and transfer it back to the local host
+    open(ID,">>.id_job"); print ID "JID: $local_host : $job_id\n"; close(ID);
+    if ($case ne ""){
+        $cmd="${gcpcmd} -p .id_job ${target_path}"; print $cmd,"\n"; system($cmd . " 2>&1");
+    }
+  } else {
+    $job_id=-999;
+  }
+
+} elsif (${gsystem} eq "none") {
+  $cmd="chmod u+x run.job";
+  system($cmd . " 2>&1");
+  $cmd="./run.job";
+  $ret=system($cmd . " 2>&1");
+  print "return value: $ret \n";
+
+} else {
+  die("$0: ERROR queue type ${gsystem} is not supported.")
+} 
+
+################################################################################
+#                             Wait for termination                             #
+################################################################################
+
+if (${gsystem} eq "rosa") {
+  #wait until job has finished
+  while (job_exists($job_id)){
+    print " sleep 10: ",`date`;
+    sleep 10;
+  };
+}
+
+################################################################################
+#                     Transfer of results to local host                        #
+################################################################################
+
+if ($case ne "") {
+
+  # check if local host is available
+  if (${gsystem} eq "rosa") {
+    (`rsh $local_host "echo gugus"` eq "gugus\n") || die("$0: ERROR host $local_host is unreachable");
+  }
+
+  # copy files back to frontend
+  @exclude_files = ('cip.conf','cip_job',${gjob_inidir},${gjob_boudir});
+  @files = `ls -1`;
+  foreach $file (@files){
+    chomp($file);
+    next if (grep(/$file/,@exclude_files) != 0);
+    $newname = $file; $newname =~ s/:/_/g; rename $file, $newname; $file = $newname;
+    $cmd="${gcpcmd} -rp $file ${target_path}"; print $cmd,"\n"; system($cmd . " 2>&1");
+  }
+
+}
+print "done\n";
+
+# copy output of this script to frontend
+if ($case ne ""){
+ 
+  # add cleanup line, before output moves away
+  if (${gclean} eq 1) {
+    print "will delete ${gjob_host}:${job_dir}"
+  }
+
+  # check if local host is available
+  if (${gsystem} eq "rosa") {
+    (`rsh $local_host "echo gugus"` eq "gugus\n") || die("$0: ERROR host $local_host is unreachable");
+  }
+
+  #send output file to local host
+  $cmd="${gcpcmd} -p $output_filename ${target_path}"; system($cmd . " 2>&1");
+  $cmd="${gcpcmd} -p $output_filename ${case_path}"; system($cmd . " 2>&1");
+
+}
+
+###############################################################################
+#                     cleanup on job host                                      #
+################################################################################
+
+# clean up if requested
+if (${gclean} eq 1) {
+  if ($case ne "") {
+    $cmd="/bin/rm -rf ${job_dir}; ";
+    $cmd="$cmd trap EXIT HUP INT QUIT TERM KILL STOP";
+    print $cmd,"\n"; system($cmd . " 2>&1");
+  }
+  print "done cleanup\n";
+}
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub job_exists {
+  # checks, if a job with the id $job_id exists in the queue
+  # it parses the output of the command squeue
+  my ($job_id)=@_;
+  open(JOBLIST,"squeue -a |");
+  while (<JOBLIST>) {
+    #skip entry if it does not begin with a number
+    #next if /^[^0-9]/;
+    #skip entry if it does not begin with the job_id
+    next until /^$job_id/;
+    return 1;
+  }
+  return 0;
+  close(JOBLIST);
+}
+
+

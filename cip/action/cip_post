@@ -1,0 +1,199 @@
+#!/usr/bin/perl
+
+# dependencies
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get my host name
+chomp($local_host=`hostname`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('dho:v',\%opt) || usage();
+usage() if $opt{'h'};
+
+# check which cases to postprocess
+@cases = @ARGV;
+@cases = ('./') if ($#ARGV == -1);
+
+# redirect output 
+if ($opt{'o'}) {
+  $outf = $opt{'o'};
+  open(STDOUT,"> ${outf}");
+}
+
+# save cwd
+chomp($olddir = `pwd`);
+
+# postprocess all cases
+$totret=0;
+foreach $case (@cases) {
+
+  # go to old directory
+  chdir($olddir);
+
+  # check if really a case
+  unless (-f "$case/cip_globals") {
+    print "$0: ERROR $case is not a CIP case (skipped)\n";
+    next;
+  }
+
+  # go to case directory
+  chdir($case);
+  chomp($case = `pwd`);
+  chomp($casename = `basename $case`);
+  chdir($user_home);
+  chomp($user_home = `pwd`);
+  chdir($case);
+  $casebase = $case;
+  $casebase =~ s|($user_home)/||;
+  chomp($casebase = `dirname $casebase`);
+  $arch_dir = "$garch_base/$casebase/$casename";
+  $post_dir = "$gpost_base/$casebase/$casename";
+
+  # cleaning case directory
+  print "$0: postprocessing case $casename\n";
+
+  # get globals
+  eval `cat cip_globals` || die("$0: ERROR cip_globals unavailable/corrupt");
+
+  # write process id of this script in file and transfer it back to the local host
+  open(ID,">>.id"); print ID "PID: $local_host : $$\n"; close(ID);
+
+  # tell user what we are doing
+  mailmessage("post launched");
+  $ret = 0;
+
+  chdir($post_dir);
+  #################################################################################
+  #   Run custom post-processing script if present
+  #################################################################################
+
+  if (defined($postproc_hook)) {
+    if (-f "$postproc_hook") {
+      print "$0: running postprocessing hook ($postproc_hook)\n";
+      $cmd = "$postproc_hook"; print "$0: $cmd\n" if ($opt{'v'}); $ret += system($cmd . " 2>&1");
+    }
+  }
+
+#  #################################################################################
+#  #   Generate IVE-NetCDF-files                                                   #
+#  #################################################################################
+#
+#  if ($opt{'n'}) {
+#    $cmd = "cip 2cdf"; print "$0: $cmd\n" if ($opt{'v'}); $ret += system($cmd . " 2>&1");
+#  }
+
+  #################################################################################
+  #   Archive case                                                                #
+  #################################################################################
+
+  if (${garchive} eq 1) {
+
+    # remove existing case directory on archive host (rosa)
+    $cmd = "rsh ${garch_host} \"/bin/rm -rf $arch_dir\""; print "$0: $cmd\n" if ($opt{'v'}); system($cmd . " 2>&1");
+
+    # create new case directory on archive host (rosa)
+    $cmd = "rsh ${garch_host} \"mkdir -p $arch_dir\""; print "$0: $cmd\n" if ($opt{'v'}); system($cmd . " 2>&1");
+
+    # rcp input/output/bc directories
+    @archive_items = ("${gjob_outdir}","${gjob_inidir}","${gjob_boudir}");
+    %tmp = map { $_, 1 } @archive_items;
+    @archive_items = keys %tmp;
+    foreach $item (@archive_items) {
+      $item =~ s/\/$//g;
+      next unless (-e $item);
+      $cmd = "rcp -rp $item ${garch_host}:$arch_dir/"; print "$0: $cmd\n" if ($opt{'v'}); $ret += system($cmd . " 2>&1");
+    }
+
+    # archive the case excluding GRIB files
+    $cmd = "arf -a ${garch_host} -c -f -g -o -z ${case} $arch_dir"; print "$0: $cmd\n" if ($opt{'v'}); $ret += system($cmd . " 2>&1");
+
+  }
+
+  #################################################################################
+  #   Remove output on local host
+  #################################################################################
+
+  if ($opt{'d'}) {
+    if ($ret == 0) {
+      print "$0: $casename: cleaning up\n";
+      @delete_items = ("output");
+      foreach $item (@delete_items) {
+        $cmd = "/bin/rm -rf $item"; print "$0: $cmd\n" if ($opt{'v'}); system($cmd . " 2>&1");
+      }
+    }
+  }
+
+#  #################################################################################
+#  #   Make plots
+#  #################################################################################
+#
+#  if ($opt{'p'}) {
+#    if ($ret == 0) {
+#      mailmessage("making plots");
+#      $cmd = "rsh ${garch_host} \"cd $arch_dir;./cip plots $arch_dir &\""; print "$0: $cmd\n" if ($opt{'v'}); $ret += system($cmd . " 2>&1");
+#     }
+#  }
+
+  #################################################################################
+  #   FINISH
+  #################################################################################
+
+  # tell user what happened
+  if ($ret ne 0) {
+    mailmessage("ERROR post failed");
+  } else {
+    mailmessage("post finished");
+  }
+
+  # change back to case directory
+  chdir($case);
+
+  # compute global error
+  $totret+=$ret;
+}
+
+#################################################################################
+#   END
+#################################################################################
+
+# close output
+close(STDOUT);
+
+# exit with grace
+exit $totret;
+
+#################################################################################
+#   SUBROUTINES
+#################################################################################
+
+sub usage {
+  my $usage = <<EOF;
+usage: $0 [-d] [-h] [-o file] [-v]
+options:
+  -d        delete output after successful execution
+  -h        displays this help page
+  -o file   redirect output to file
+  -v        verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+
+sub mailmessage {
+  my ($message) = @_;
+  $message = "$0: ${casename}: $message";
+  print $message . "\n";
+  $cmd = "echo gugus | mailx -s \"$message\" ${gemail}"; system("$cmd");
+}
+

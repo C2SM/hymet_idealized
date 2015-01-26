@@ -1,0 +1,69 @@
++++++++++++++++++++++++++++++++++++
++  CIP - COSMO idealized package  +
++++++++++++++++++++++++++++++++++++
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# Copyright (C) Oliver Fuhrer, Daniel Leuenberger, meteoswiss
+
+Authors:
+
+  Daniel Leuenberger, daniel.leuenberger@meteoswiss.ch
+  Oliver Fuhrer, oliver.fuhrer@meteoswiss.ch
+
+Description:
+
+  CIP is a small collection of mostly Perl scripts which
+  faciliates the creation, launching and archival of small
+  idealized and non-idealized COSMO model runs. CIP considers
+  the two hosts: a frontend where the launching and post-
+  processing is done, and a number cruncher where the actual
+  COSMO model simulation is executed. All possible actions are
+  done via one command (cip) which accepts several actions
+  (clean, compile, diff, kill, new, post, restore, start).
+  Help for all commands and possible options can be obtained
+  by supplying the -h option.
+
+Files:
+
+ After having installed CIP you need to set the environment
+ variable CIP_BASE to point to your installation directory.
+
+ $CIP_BASE/bin/cip
+   make a link to this file into your personal ~/bin directory
+   or add $CIP_BASE/bin to your $PATH environment variable in
+   or to be able to use CIP.
+
+ $CIP_BASE/cip.conf
+   Contains settings proper to your environment such as
+   your user name and the host names.
+
+ $CIP_BASE/skel/cip_globals
+   Contains settings proper for each case. If not otherwise
+   specified, this file is copied into your case directories
+   and can be modified suitable to your case.
+
+Dependencies:
+
+  Make sure you have the following command in your PATH:
+    arf, isgrib
+  If not, link them from ~olifu/bin into your personal binary
+  directory or set your PATH accordingly.
+
+Example:
+
+  > cip new example       # creates a new case named example
+  > cd example            # go to case directory
+  > vi cip_globals        # edit the COSMO namelists
+  > cip start             # launch the job
+

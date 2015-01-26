@@ -1,0 +1,79 @@
+#!/usr/bin/perl
+
+#########################################################
+#  CIP main entry
+#########################################################
+
+# dependencies
+use Getopt::Std;
+use File::Basename;
+
+################################################################################
+#
+#   START
+################################################################################
+#
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0=basename($0));
+
+# check arguments
+if ($#ARGV == -1) {
+  usage();
+} else {    
+  $action = shift(@ARGV);
+}
+
+# check cip directory structure
+die("$0: ERROR Environment variable CIP_BASE must be set") unless (defined($ENV{'CIP_BASE'}));
+$cip_dir="$ENV{'CIP_BASE'}";
+$bin_dir="$cip_dir/bin";
+$action_dir="$cip_dir/action";
+$skel_dir="$cip_dir/skel";
+die("$0: ERROR $cip_dir must contain bin, action and skel directories") unless (-d "$bin_dir" and -d "$action_dir" and -d "$skel_dir");
+
+# check configuration file
+die("$0: ERROR cip.conf not present in $cip_dir") unless (-f "$cip_dir/cip.conf");
+eval `cat $cip_dir/cip.conf` || die("$0: ERROR configuration file corrupt $cip_dir/cip.conf");
+
+# get list of actions
+chomp(@actions=`cd $action_dir; /bin/ls cip_* | sed 's/^cip_//g'`);
+%actions=map { $_, 1 } @actions;
+
+# check if requested action exists
+usage() unless (defined($actions{"$action"}));
+
+# call action
+if ("$action" eq "main") {
+  system("$action_dir/cip_${action} @ARGV &");
+} else {
+  system("$action_dir/cip_${action} @ARGV");
+}
+
+# goodbye
+exit 0;
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub usage {
+  my $usage=<<EOF;
+usage: $0 action [opts] [args]
+  cmd is one of the following cip actions:
+     clean    clean and kill one or more cases
+     compile  create executable for one or more cases
+     diff     compare two cases
+     kill     kill one or more cases
+     new      create one or more new cases 
+     post     postprocess one or more cases
+     restore  restore one or more archived cases
+     start    launch one or more cases
+  options and arguments are given for the corresponding action.
+  for help on a specific action use "$0 action -h"
+EOF
+  print $usage;
+  exit 1;
+}
+

@@ -1,0 +1,30 @@
+#########################################################
+#  CIP settings
+#########################################################
+
+# general settings
+$guser       = "juergsc";
+$gemail      = "jschmidli@env.ethz.ch";
+
+# local host (frontend)
+$glocal_code = "/Users/${guser}/cosmo";
+$gcode_tmp = "/scratch/${guser}/tmp";
+$guser_home = "/Users/${guser}";
+
+# job host (number cruncher)
+$gjob_host   = "local-host";
+$glocal      = 1;
+$gqueue      = "none";
+$gjob_base   = "/scratch/${guser}/tmp";
+
+# post processing host
+$gpost_host  = "local-host";
+$gpost_base  = "/data/${guser}";
+
+# archive host
+$garch_host  = "local-host";
+$garch_base  = "/archive/${guser}";
+
+# commands
+$gexecmd     = "eval";
+$gcpcmd      = "cp";

@@ -1,0 +1,12 @@
++++++++++++++++++++++++++++++++++++
++  CIP - COSMO idealized package  +
++++++++++++++++++++++++++++++++++++
+
+Todo:
+  - make it possible to install without having local copy of
+    all scripts
+  - update README
+  - option to get data on number cruncher before run
+  - by default clean away case directory on number cruncher
+    and option to keep it
+

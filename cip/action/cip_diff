@@ -1,0 +1,91 @@
+#!/usr/bin/perl
+
+# dependencies
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('ahqsv',\%opt) || usage();
+usage() if $opt{'h'};
+
+# which sort of diff to use
+$diffcmd = "diff -r";
+$diffcmd .= " -q" if ($opt{'q'});
+$diffcmd .= " -y --suppress-common-lines" if ($opt{'s'});
+
+# get arguments
+$case1 = shift @ARGV;
+$case2 = shift @ARGV;
+$case1 =~ s/\/$//g;
+$case2 =~ s/\/$//g;
+die "$0: ERROR two case directories must be specified!" unless ($case1 && $case2);
+die "$0: ERROR both directories must be CIP cases!" unless (-f "$case1/cip_globals" && -f "$case2/cip_globals");
+
+if ($opt{'a'}) {
+
+  push @out,`$diffcmd $case1 $case2 2>&1`;
+
+} else {
+
+	# which files to compare
+	@compare_files = ("cip_globals");
+
+	# add specific/personal files to comparison
+	eval `cat $case1/cip_globals`;
+	push(@compare_files,"${gcode_exe}","${gjob_inidir}","${gjob_boudir}","${gcode_custom}",@gfiles_personal);
+	eval `cat $case2/cip_globals`;
+	push(@compare_files,"${gcode_exe}","${gjob_inidir}","${gjob_boudir}","${gcode_custom}",@gfiles_personal);
+
+	# remove duplicates and empties
+	%tmp = map { $_, 1 } @compare_files;
+	delete($tmp{""});
+	@compare_files = keys %tmp;
+
+	# compare each file
+	@out = ();
+	foreach $f (@compare_files) {
+		next unless ((-e "$case1/$f") || (-e "$case2/$f"));
+		push @out,"$0: ************* $diffcmd of $f (${case1} - ${case2}) *************\n";
+		push @out,`$diffcmd $case1/$f $case2/$f 2>&1`;
+		pop @out if (not $? and not $opt{'v'});
+	}
+
+}
+
+# print output
+print @out if (@out);
+
+# goodbye
+exit 0;
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub usage{
+  $0 =~ s#.*/##g;
+  my $usage=<<EOF;
+usage: $0 [-a] [-h] [-q] [-s] [-v] case1 case2
+  case1  first CIP case directory
+  case2  second CIP case directory
+options:
+     -a  compare everything
+     -h  prints this help page
+     -q  output only wether files differ
+     -s  output side-by-side
+     -v  verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+

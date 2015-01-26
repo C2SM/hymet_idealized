@@ -1,0 +1,104 @@
+#!/usr/bin/perl
+
+# dependencies
+use Getopt::Std;
+
+#################################################################################
+#   START
+#################################################################################
+
+# get my name
+$0 =~ s#.*/##g;
+chomp($0 = `basename $0 | sed 's/cip_/cip /g'`);
+
+# get my host name
+chomp($local_host=`hostname`);
+
+# get configuration
+eval `cat $ENV{'CIP_BASE'}/cip.conf` || die("$0: ERROR cip.conf unavailable/corrupt");
+
+# parse options
+getopts('hv',\%opt) || usage();
+usage() if $opt{'h'};
+
+# check which cases to kill
+@cases = @ARGV;
+@cases = ('./') if ($#ARGV == -1);
+
+# save cwd
+
+# get my host name
+chomp($olddir = `pwd`);
+
+# kill all cases
+foreach $case (@cases) {
+
+  # go back to original directory
+  chdir($olddir);
+
+  # check if really a case
+  unless (-f "$case/cip_globals") {
+    print "$0: ERROR $case is not a CIP case (skipped)\n";
+    next;
+  }
+
+  # go to case directory
+  chdir($case);
+  chomp($case = `pwd`);
+  chomp($casename = `basename $case`);
+
+  # cleaning case directory
+  print "$0: killing case $casename\n";
+
+  # get globals
+  eval `cat cip_globals` || die("$0: ERROR cip_globals unavailable/corrupt");
+
+  # find process ID files
+  foreach $idfile (`ls .id* 2>/dev/null`) {
+    chomp($idfile);
+    @lines = split(/\n/,`cat $idfile`);
+    foreach $line (@lines) {
+      ($type,$host,$id) = split(/:/,$line);
+      next if (($type eq "") or ($host eq "") or ($id eq ""));
+      $host =~ s/^\s+//;    # remove leading white spaces
+      $host =~ s/\s+//;	    # remove trailing white spaces
+      if ($type eq "PID") {
+        if ($local_host eq $host) {
+          $cmd = "/bin/kill -9 $id"; print "$0: $cmd\n" if ($opt{'v'}); system("$cmd 2>/dev/null 1>/dev/null");
+        } else {
+          (`rsh $host "echo gugus"` eq "gugus\n") || die("$0: ERROR host $host is unreachable");
+          $cmd = "rsh $host \"/bin/kill -9 $id\""; print "$0: $cmd\n" if ($opt{'v'}); system("$cmd 2>/dev/null 1>/dev/null");
+       }
+      } elsif ($type eq "JID") {
+        if ($loca_host eq $host) {
+          $cmd = "qdel $id"; print "$0: $cmd\n" if ($opt{'v'}); system("$cmd 2>/dev/null 1>/dev/null");
+        } else {
+          (`rsh $host "echo gugus"` eq "gugus\n") || die("$0: ERROR host $host is unreachable");
+          $cmd = "rsh $host \"qdel $id\""; print "$0: $cmd\n" if ($opt{'v'}); system("$cmd 2>/dev/null 1>/dev/null");
+        }
+      }
+      $cmd = "/bin/rm -f $idfile"; print "$0: $cmd\n" if ($opt{'v'}); system($cmd);
+    }
+  }
+
+}
+
+# goodbye
+exit 0;
+
+################################################################################
+#   SUBROUTINES
+################################################################################
+
+sub usage {
+  my $usage=<<EOF;
+usage: $0 [-h] [-v] [case ...]
+  case  case to kill (current directory if none specified)
+options:
+    -h   displays this help page and exits
+    -v   verbose mode
+EOF
+  print $usage;
+  exit 1;
+}
+
