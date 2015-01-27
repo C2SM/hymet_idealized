@@ -1,4 +1,5 @@
 **LICENSE**
+
 *These programs/scripts are free software: you can redistribute it and/or modify*
 *it under the terms of the GNU Lesser General Public License as published by*
 *the Free Software Foundation, either version 3 of the License, or*
@@ -14,16 +15,18 @@
 *Copyright (C) 2013-2014 Steven Boeing, ETHZ*
 
 **CONTACT**
+
 steven."lastname with oe" (at) env.ethz.ch
 OR
 sjboing (at) "the usual g-mail suffix"
 
 **IMPORTANT**
+
 * The RTTOV data (rtcoef_msg_1_seviri.dat, rtcoef_meteosat_7_mviri.dat) that are needed to use this package are currently NOT provided with the package! Download these and put them in the templates directory.
 
 **DESCRIPTION**
-This is a collection of scripts for setting up and running idealized (including LEM) simulations
-with COSMO. These scripts by default assume that :
+
+This is a collection of scripts for setting up and running idealized (including LEM) simulations with COSMO. These scripts by default assume that :
 * The hymet_idealized directory is directly under home (directories as at cscs: /users/...)
 * Cip is installed (see notes in the cip directory. Some paths may need to be adjusted
   Provided with this package, thanks Oli Fuhrer and Daniel Leuenberger for making this available)
@@ -45,6 +48,7 @@ A modified version of these scripts has been used by Davide Panosetti during his
 A manuscript for MetZ is in preparation
 
 **KNOWN ISSUES/FEATURES**
+
 * The postprocessing is currently only written for cases with a ridge-like
   topography (i.e. in the averaging it is assumed one dimension is homogeneous in height).
 * In COSMO, what is outputted as TKE currently depends on both the choice of turbulence scheme and
@@ -54,18 +58,44 @@ A manuscript for MetZ is in preparation
   run out of memory (use node with more memory or rewrite script) or processing time
   (use the long queue on e.g. pilatus)
 * Installing netcdf4python on daint : we got it running with the following steps (26 Jan 2015):
+
+
   module swap PrgEnv-pgi PrgEnv-gnu
+
+
   module load zlib
+
+
   module load hdf5-parallel/1.8.13_ftn
+
+
   module load netcdf-hdf5parallel/4.3.2_ftn
+
+
   export NETCDF4_DIR=/apps/pilatus/netcdf-hdf5parallel/4.3.2_ftn/gnu_482
+
+
   export HDF5_DIR=/apps/pilatus/hdf5-parallel/1.8.13_ftn/gnu_482
+
+
   export CC=mpicc
+
+
   export C_INCLUDE_PATH="/apps/pilatus/mvapich2/1.9/gcc-4.8.2/include/"
+
+
   python setup.py
+
+
   export PYTHONPATH="$PYTHONPATH:/users/pdavide/lib/python2.7/site-packages/"
+
+
   python setup.py install --prefix=/users/YOURUSERNAME
 
   Possibly, you will also need to:
+
+
   module load netcdftime
+
+
   module load mvapich2/1.9
