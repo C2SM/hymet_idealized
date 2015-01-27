@@ -488,7 +488,7 @@ class confcase:
                 copy(templatedir+'/rtcoef_msg_1_seviri.dat',destdir)
                 copy(templatedir+'/rtcoef_meteosat_7_mviri.dat',destdir)
             else:
-                sys.exit("Error: no RTTOV data present, see README")
+                sys.exit("Error: no RTTOV (rtcoef_msg_1_seviri.dat,rtcoef_meteosat_7_mviri.dat) data present, see README")
             # write to log twice
             writelog(logtext,destdir+'/log')           
             writelog(logtext+'\n destdir='+destdir,globallog)           
