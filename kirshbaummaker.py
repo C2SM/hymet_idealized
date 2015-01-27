@@ -45,7 +45,6 @@ pp=zeros(height)
 
 Tbl=296
 Nlowerfree=0.002
-Hlowerfree=3000
 Nstrat=0.02
 grav=9.81
 sfratio=0.3
