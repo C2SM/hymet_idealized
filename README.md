@@ -47,6 +47,23 @@ And a templates directory with basic information on the cases.
 A modified version of these scripts has been used by Davide Panosetti during his MSc thesis
 A manuscript for MetZ is in preparation
 
+** OUTPUT FILES **
+
+* xzlv.*.nc: mean values in x,z plane, variables outputted on model levels
+* xzz.*.nc: mean values in x,z plane, variables outputted on height levels
+* interp.*.nc: mean values in x,z plane, variables outputted on model levels, interpolated to a number of height levels
+* crossxy.variablename.*.nc: cross sections in x,y plane at different levels
+* crosslv.*.nc: cross sections in x,z plane, variables outputted on model levels
+* crossz.*.nc: cross sections in x,z plane, variables outputted on height levels
+* crossinterp.*.nc: cross sections in x,z plane, variables outputted on model levels, interpolated to a number of height levels
+* prof1d.*.nc: mean profiles, variables outputted on height levels, interpolated to height levels
+* interp1d.*.nc: mean profiles, variables outputted on model levels, interpolated to a number of height levels, values below topography not taken into account
+* hovlv.*.nc: hovmoeller diagrams, derived from model level output
+* hovz.*.nc: hovmoeller diagrams, derived from height level output
+* hovlv.*.nc: domain averages (many variables similar to hovmoeller diagrams), derived from model level output
+* hovz.*.nc: domain averages (many variables similar to hovmoeller diagrams), derived from height level output
+* clouds.*.tar: tar file with 3d cloud fields (no gz, as cloud fields themselves are already compressed)
+
 **KNOWN ISSUES/FEATURES**
 
 * The postprocessing is currently only written for cases with a ridge-like
